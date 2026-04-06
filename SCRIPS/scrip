@@ -1,0 +1,70 @@
+library(geoR)
+library(sp)
+library(fields)
+
+datos_santiago <- read.csv("Santiago.csv", sep = ";", dec = ".")
+
+summary(datos_santiago$KPI)
+
+geo_kpi_santiago <- as.geodata(datos_santiago, 
+                               coords.col = c("Longitud", "Latitud"), 
+                               data.col = "KPI")
+
+colores_gradiente <- colorRampPalette(c("gold", "deeppink2"))(100)
+intervalos_valor <- as.numeric(cut(geo_kpi_santiago$data, breaks = 100))
+colores_asignados <- colores_gradiente[intervalos_valor]
+
+plot(geo_kpi_santiago$coords, 
+     col = colores_asignados, 
+     pch = 20, 
+     cex = 2,
+     xlab = "Coordenada X: Longitud WGS84", 
+     ylab = "Coordenada Y: Latitud WGS84",
+     main = "Inspección de Patrones Espaciales - Variable KPI Costos",
+     sub = "A mayor diámetro y tonalidad rosa, mayor ineficiencia en costos constructivos")
+grid(col = "gray80", lty = "dotted")
+
+matriz_distancias <- dist(geo_kpi_santiago$coords)
+limite_asintotico <- max(matriz_distancias) / 2  # Truncamiento de ruido en colas estocásticas
+
+variograma_empirico <- variog(geo_kpi_santiago, max.dist = limite_asintotico)
+
+plot(variograma_empirico, 
+     type = "b", 
+     col = "hotpink3", 
+     pch = 19,
+     xlab = "Magnitud de Vector de Separación Espacial (h)", 
+     ylab = expression(hat(gamma)(h)),
+     main = "Variograma Empírico Estacionario - Indagación de Autocorrelación Espacial")
+
+# plot(variograma_direccional, legend = TRUE, main = "Señal de Ruido Direccional (Baja validez por N<40)")
+
+ajuste_teorico_exp <- variofit(variograma_empirico, 
+                               cov.model = "exponential", 
+                               weights = "cressie", 
+                               minimisation.function = "optim")
+
+efecto_nugget <- ajuste_teorico_exp$nugget
+varianza_estructural <- ajuste_teorico_exp$cov.pars
+alcance_rango <- ajuste_teorico_exp$cov.pars
+metrica_loss <- ajuste_teorico_exp$value
+
+plot(variograma_empirico, 
+     type = "b", 
+     col = "gray40", 
+     pch = 19,
+     xlab = "Desplazamiento métrico inter-plantas (h)", 
+     ylab = expression(gamma(h)),
+     main = "Asimilación Algorítmica del Modelo Exponencial Isotrópico sobre Data Empírica")
+lines(ajuste_teorico_exp, col = "dodgerblue3", lwd = 4)
+legend("bottomright", 
+       legend = c("Soporte Empírico", "Modelo Matemático Exponencial Optimizado (WLS)"),
+       col = c("gray40", "dodgerblue3"), 
+       lty = c(NA, 1), pch = c(19, NA), lwd = c(1, 4))
+
+cat("Efecto Nugget:", ajuste_teorico_exp$nugget, "\n")
+
+
+cat("Varianza parcial (Sill):", ajuste_teorico_exp$cov.pars[1], "\n")
+
+cat("Rango de dependencia (phi):", ajuste_teorico_exp$cov.pars, "\n")
